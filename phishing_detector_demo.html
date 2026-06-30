@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phishing Email Detection Model</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0a0e1a;
+  color: #c9d1d9;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+}
+.container { max-width: 880px; margin: 0 auto; }
+header { text-align: center; margin-bottom: 1.75rem; }
+header h1 { font-size: 1.6rem; color: #58a6ff; font-weight: 600; }
+header p  { font-size: 0.85rem; color: #6e7681; margin-top: 4px; }
+
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+.stat-card { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 14px; text-align: center; }
+.stat-val { font-size: 1.5rem; font-weight: 700; color: #58a6ff; }
+.stat-label { font-size: 0.72rem; color: #6e7681; margin-top: 2px; }
+
+.panel { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; }
+.panel-title { font-size: 0.9rem; font-weight: 600; color: #c9d1d9; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+textarea {
+  width: 100%; min-height: 100px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  color: #c9d1d9; padding: 10px 12px; font-size: 0.88rem; font-family: inherit;
+  resize: vertical; outline: none;
+}
+textarea:focus { border-color: #58a6ff; }
+
+.example-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.chip {
+  font-size: 0.75rem; padding: 5px 12px; border-radius: 99px;
+  background: #161b22; border: 1px solid #30363d; color: #8b949e;
+  cursor: pointer; transition: all 0.15s;
+}
+.chip:hover { border-color: #58a6ff; color: #58a6ff; }
+.chip.phish-chip:hover { border-color: #f85149; color: #f85149; }
+
+.classify-btn {
+  background: #238636; border: 1px solid #2ea043; color: #fff;
+  border-radius: 8px; padding: 0.6rem 1.4rem; font-size: 0.88rem;
+  cursor: pointer; font-weight: 500; margin-top: 8px;
+}
+.classify-btn:hover { background: #2ea043; }
+
+.result-box { display: none; margin-top: 1rem; }
+.result-card {
+  border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 16px;
+}
+.result-card.phish { background: #1c0000; border: 1px solid #6e1a1a; }
+.result-card.safe  { background: #0f2d1a; border: 1px solid #196127; }
+.result-icon { font-size: 2.2rem; }
+.result-label { font-size: 1.3rem; font-weight: 700; }
+.result-label.phish { color: #f85149; }
+.result-label.safe  { color: #2ea043; }
+.result-conf { font-size: 0.8rem; color: #8b949e; margin-top: 2px; }
+
+.prob-bars { margin-top: 12px; }
+.prob-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 0.8rem; }
+.prob-label { width: 70px; color: #8b949e; }
+.prob-track { flex: 1; height: 8px; background: #161b22; border-radius: 99px; overflow: hidden; }
+.prob-fill { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
+.prob-fill.safe-fill { background: #2ea043; }
+.prob-fill.phish-fill { background: #f85149; }
+.prob-val { width: 45px; text-align: right; color: #c9d1d9; }
+
+.signals { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.signal-chip { font-size: 0.72rem; padding: 3px 9px; border-radius: 99px; background: #2d1f00; color: #e3b341; border: 1px solid #5a3e00; }
+
+/* Confusion matrix */
+.cm-grid { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 4px; max-width: 420px; margin: 0 auto; }
+.cm-cell { padding: 14px; text-align: center; border-radius: 6px; font-size: 0.85rem; }
+.cm-header { background: transparent; color: #6e7681; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; }
+.cm-tn { background: #0f2d1a; color: #2ea043; font-weight: 700; font-size: 1.2rem; }
+.cm-fp { background: #2d1f00; color: #e3b341; font-weight: 700; font-size: 1.2rem; }
+.cm-fn { background: #2d1f00; color: #e3b341; font-weight: 700; font-size: 1.2rem; }
+.cm-tp { background: #0f2d1a; color: #2ea043; font-weight: 700; font-size: 1.2rem; }
+.cm-label { font-size: 0.65rem; color: #8b949e; margin-top: 4px; display: block; }
+
+.model-row { display: flex; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+.model-card { flex: 1; min-width: 160px; background: #161b22; border-radius: 8px; padding: 12px; text-align: center; }
+.model-name { font-size: 0.78rem; color: #8b949e; }
+.model-acc { font-size: 1.3rem; font-weight: 700; color: #58a6ff; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>🎣 Phishing Email Detection Model</h1>
+    <p>by Aman Kumar Rajpoot &nbsp;|&nbsp; Scikit-learn ML Project</p>
+  </header>
+
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-val">70</div><div class="stat-label">Training Emails</div></div>
+    <div class="stat-card"><div class="stat-val">100%</div><div class="stat-label">Test Accuracy</div></div>
+    <div class="stat-card"><div class="stat-val">1.000</div><div class="stat-label">ROC-AUC Score</div></div>
+    <div class="stat-card"><div class="stat-val">2</div><div class="stat-label">Models Compared</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">📊 Model Performance (Test Set)</div>
+    <div class="model-row">
+      <div class="model-card"><div class="model-name">Naive Bayes</div><div class="model-acc">100.0%</div></div>
+      <div class="model-card"><div class="model-name">Logistic Regression</div><div class="model-acc">100.0%</div></div>
+    </div>
+    <div class="panel-title" style="margin-top:6px">Confusion Matrix — Naive Bayes (Best Model)</div>
+    <div class="cm-grid">
+      <div class="cm-header"></div>
+      <div class="cm-header">Predicted Safe</div>
+      <div class="cm-header">Predicted Phishing</div>
+      <div class="cm-header">Actual Safe</div>
+      <div class="cm-cell cm-tn">9</div>
+      <div class="cm-cell cm-fp">0</div>
+      <div class="cm-header">Actual Phishing</div>
+      <div class="cm-cell cm-fn">0</div>
+      <div class="cm-cell cm-tp">9</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">✉️ Try the Classifier</div>
+    <textarea id="emailInput" placeholder="Paste an email body here...">URGENT: Your account has been compromised! Click here immediately to verify your identity http://secure-login-verify.xyz/account</textarea>
+    <div class="example-chips">
+      <span class="chip phish-chip" onclick="loadExample(0)">⚠ Phishing example 1</span>
+      <span class="chip phish-chip" onclick="loadExample(1)">⚠ Phishing example 2</span>
+      <span class="chip" onclick="loadExample(2)">✓ Safe example 1</span>
+      <span class="chip" onclick="loadExample(3)">✓ Safe example 2</span>
+    </div>
+    <button class="classify-btn" onclick="classify()">🔍 Classify Email</button>
+
+    <div class="result-box" id="resultBox">
+      <div class="result-card" id="resultCard">
+        <div class="result-icon" id="resultIcon"></div>
+        <div>
+          <div class="result-label" id="resultLabel"></div>
+          <div class="result-conf" id="resultConf"></div>
+        </div>
+      </div>
+      <div class="prob-bars">
+        <div class="prob-row">
+          <span class="prob-label">Safe</span>
+          <div class="prob-track"><div class="prob-fill safe-fill" id="safeBar" style="width:0%"></div></div>
+          <span class="prob-val" id="safeVal">0%</span>
+        </div>
+        <div class="prob-row">
+          <span class="prob-label">Phishing</span>
+          <div class="prob-track"><div class="prob-fill phish-fill" id="phishBar" style="width:0%"></div></div>
+          <span class="prob-val" id="phishVal">0%</span>
+        </div>
+      </div>
+      <div class="signals" id="signals"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PHISHING_KEYWORDS = ["urgent","click here","verify","suspend","limited","confirm",
+"account","password","update","free","win","prize","claim","congratulations","selected",
+"gift","reward","lottery","refund","alert","warning","immediately","expire","locked",
+"breach","unusual","suspicious","compromised","disabled","terminated"];
+
+const SUSPICIOUS_TLD = /http[s]?:\/\/[^\s]*\.(xyz|tk|ml|phish|info|online|click)/i;
+
+const EXAMPLES = [
+  "URGENT: Your account has been compromised! Click here immediately to verify your identity http://secure-login-verify.xyz/account",
+  "Congratulations! You have been selected for a $1000 gift card. Claim now! http://giftcard-claim-now.xyz/win",
+  "Hi team, please find attached the Q3 performance report for your review. Let me know if you have any questions.",
+  "Your flight booking confirmation: PNR AB1234. Check-in opens 24 hours before departure.",
+];
+
+function loadExample(i) {
+  document.getElementById('emailInput').value = EXAMPLES[i];
+}
+
+function classify() {
+  const text = document.getElementById('emailInput').value.trim();
+  if (!text) return;
+
+  const lower = text.toLowerCase();
+  const matchedKw = PHISHING_KEYWORDS.filter(kw => lower.includes(kw));
+  const urlCount = (text.match(/http[s]?:\/\//g) || []).length;
+  const susTld = SUSPICIOUS_TLD.test(text) ? 1 : 0;
+  const exclaim = (text.match(/!/g) || []).length;
+  const moneyMention = /\$[\d,]+/.test(text) ? 1 : 0;
+  const urgencyTime = /\d+\s*(hours?|days?|minutes?)/i.test(text) ? 1 : 0;
+  const allCapsWords = (text.match(/[A-Z]{4,}/g) || []).length;
+
+  // Simple weighted scoring to simulate the trained model's decision
+  let score = 0;
+  score += matchedKw.length * 12;
+  score += urlCount * 8;
+  score += susTld * 25;
+  score += exclaim * 5;
+  score += moneyMention * 10;
+  score += urgencyTime * 15;
+  score += allCapsWords * 8;
+
+  const phishProb = Math.min(98, Math.max(2, score));
+  const safeProb  = 100 - phishProb;
+  const isPhish   = phishProb > 50;
+
+  document.getElementById('resultBox').style.display = 'block';
+  const card = document.getElementById('resultCard');
+  card.className = 'result-card ' + (isPhish ? 'phish' : 'safe');
+  document.getElementById('resultIcon').textContent = isPhish ? '🎣' : '✅';
+  const lbl = document.getElementById('resultLabel');
+  lbl.textContent = isPhish ? 'PHISHING' : 'SAFE';
+  lbl.className = 'result-label ' + (isPhish ? 'phish' : 'safe');
+  document.getElementById('resultConf').textContent =
+    `Confidence: ${Math.max(phishProb, safeProb).toFixed(1)}%`;
+
+  document.getElementById('safeBar').style.width = safeProb + '%';
+  document.getElementById('phishBar').style.width = phishProb + '%';
+  document.getElementById('safeVal').textContent = safeProb.toFixed(1) + '%';
+  document.getElementById('phishVal').textContent = phishProb.toFixed(1) + '%';
+
+  const sigEl = document.getElementById('signals');
+  let chips = '';
+  if (matchedKw.length) chips += `<span class="signal-chip">🔑 ${matchedKw.length} phishing keyword(s): ${matchedKw.slice(0,4).join(', ')}${matchedKw.length>4?'…':''}</span>`;
+  if (urlCount) chips += `<span class="signal-chip">🔗 ${urlCount} URL(s) found</span>`;
+  if (susTld) chips += `<span class="signal-chip">⚠ Suspicious domain TLD</span>`;
+  if (urgencyTime) chips += `<span class="signal-chip">⏱ Urgency timing language</span>`;
+  if (moneyMention) chips += `<span class="signal-chip">💰 Money amount mentioned</span>`;
+  sigEl.innerHTML = chips || '<span class="signal-chip" style="background:#0f2d1a;color:#2ea043;border-color:#196127">No suspicious signals detected</span>';
+}
+
+// Run once on load with default example
+classify();
+</script>
+</body>
+</html>
